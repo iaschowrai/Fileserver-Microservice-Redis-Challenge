@@ -2,22 +2,50 @@ version: "3.8"
 
 services:
   file_server:
-    container_name: file-server
+    # container_name: file-server
     build:
-        context: file_server/
+      context: file_server/
     ports:
-      - "1234:1234"
+      - "1234"
     deploy:
       resources:
         limits:
           memory: 128M
           cpus: "0.25"
-      replicas: 1
+      replicas: 5
     volumes:
       - ./.fileserver/data:/tmp/
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
 
+  middleware:
+    # container_name: middleware
+    build:
+      context: middleware/
+    ports:
+      - "8080"
+    depends_on:
+      - redis
+      - file_server
+    environment:
+      - FILE_SERVER_HOST=file_server
+      - FILE_SERVER_PORT=1234
+      - FILE_SERVER_PROTO=http
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    deploy:
+      replicas: 5
 
-#   Add more container definitions below
+  redis:
+    container_name: redis
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./.redis/data:/data
+    # volumes:
+    #   - redis_data:/data
 
   # LOAD TESTER:
   # This container is for convenience and does not count against your resource cap.
@@ -27,34 +55,19 @@ services:
     build:
       context: go_load_test/
     environment:
-      - FILE_SERVER_HOST=file_server            # Point this to your application middleware
-      - FILE_SERVER_PORT=1234                   # Point this to your application middleware (port will change)
-      - FILE_SERVER_PROTO=http                  # Point this to your application middleware
+      - FILE_SERVER_HOST=middleware
+      - FILE_SERVER_PORT=8080
+      - FILE_SERVER_PROTO=http
       - FILE_SERVER_PATH_PREFIX=api/fileserver
-      - REQUESTS_PER_SECOND=1                   # Base requests/sec the load test will begin on.
-      - SEED_GROWTH_AMOUNT=1                    # Every second, this many more requests will be scheduled
-      - ENABLE_REQUEST_RAMP=true                # If true, every 1 minute, your seed growth rate doubles
-      - ENABLE_FILE_RAMP=true                   # If true, every 15 seconds the max possible file size written increases by 50%
-      - RANDOMLY_UPLOAD_LARGE_FILES=true        # If true, 1 out of every 100 files uploaded will be > 100MB in size
-      - MAX_FILE_COUNT=3000                     # Recommend 2-5x total REQUESTS_PER_SECOND (consider seed in this calculation)
-      - MAX_FILE_SIZE=1024                      # 1KB, but could be set to ANYTHING in live tests
+      - REQUESTS_PER_SECOND=1
+      - SEED_GROWTH_AMOUNT=1
+      - ENABLE_REQUEST_RAMP=true
+      - ENABLE_FILE_RAMP=true
+      - MAX_FILE_COUNT=3000
+      - MAX_FILE_SIZE=1024
       - TERM=xterm-256color
     volumes:
-      - ./.fileserver/data:/tmp/                # Error logs are written to this data dir under load_test.log
+      - ./.fileserver/data:/tmp/
     depends_on:
-      - file_server
-
-#  python_load_tester:
-#    container_name: load-tester
-#    build:
-#      context: python_load_test/
-#    environment:
-#      - FILE_SERVER_ADDR=http://file_server:1234  # Point this to your application middleware (port will change)
-#      - REQUESTS_PER_SECOND=500
-#      - MAX_FILE_COUNT=3000                       # Recommend 2-5x REQUESTS_PER_SECOND
-#      - MAX_FILE_SIZE=1024                        # 1KB, but could be set to ANYTHING in live tests
-#      - TERM=xterm-256color
-#    volumes:
-#      - ./.fileserver/data:/tmp/                  # Error logs are written to this data dir under load_test.log
-#    depends_on:
-#      - file_server
+      - middleware
+      # - cache
